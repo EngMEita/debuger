@@ -2,10 +2,13 @@
 
 namespace Meita\Debuger\Exceptions;
 
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
@@ -27,14 +30,17 @@ class DebugerExceptionHandler extends ExceptionHandler
 
     public function render($request, Throwable $e)
     {
+        $response = parent::render($request, $e);
+
         if (!config('debuger.enabled', true)) {
-            return parent::render($request, $e);
+            return $response;
         }
 
-        $status = $this->exceptionStatus($e);
+        $status = $response->getStatusCode();
 
+        // Let Laravel keep its normal handling for non-5xx responses (e.g. auth/validation).
         if ($status < 500) {
-            return parent::render($request, $e);
+            return $response;
         }
 
         $reference = $this->reference($e);
@@ -66,11 +72,15 @@ class DebugerExceptionHandler extends ExceptionHandler
             return false;
         }
 
+        if ($this->isAuthOrValidation($e)) {
+            return false;
+        }
+
         if (!$this->shouldReport($e)) {
             return false;
         }
 
-        return $this->exceptionStatus($e) >= 500;
+        return $this->statusFromException($e) >= 500;
     }
 
     protected function sendEmailReport(Throwable $e): void
@@ -137,12 +147,27 @@ class DebugerExceptionHandler extends ExceptionHandler
         return $this->referenceMap[$key];
     }
 
-    protected function exceptionStatus(Throwable $e): int
+    protected function statusFromException(Throwable $e): int
     {
         if ($e instanceof HttpExceptionInterface) {
             return $e->getStatusCode();
         }
 
+        if (method_exists($e, 'getStatusCode')) {
+            return (int) $e->getStatusCode();
+        }
+
+        if (property_exists($e, 'status')) {
+            return (int) $e->status;
+        }
+
         return 500;
+    }
+
+    protected function isAuthOrValidation(Throwable $e): bool
+    {
+        return $e instanceof AuthenticationException
+            || $e instanceof AuthorizationException
+            || $e instanceof ValidationException;
     }
 }
