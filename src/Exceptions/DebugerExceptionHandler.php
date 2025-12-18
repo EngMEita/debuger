@@ -6,6 +6,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
@@ -64,11 +65,15 @@ class DebugerExceptionHandler extends ExceptionHandler
             return false;
         }
 
-        if (app()->runningInConsole() || app()->runningUnitTests()) {
+        if (app()->runningUnitTests()) {
             return false;
         }
 
-        if (!config('debuger.mail.to')) {
+        if (app()->runningInConsole() && !config('debuger.mail.send_in_console', true)) {
+            return false;
+        }
+
+        if (empty($this->mailTo())) {
             return false;
         }
 
@@ -85,16 +90,22 @@ class DebugerExceptionHandler extends ExceptionHandler
 
     protected function sendEmailReport(Throwable $e): void
     {
+        $reference = $this->reference($e);
+
         try {
-            $reference = $this->reference($e);
             $context = $this->requestContext();
+            $to = $this->mailTo();
+
+            if (empty($to)) {
+                return;
+            }
 
             Mail::send('debuger::email', [
                 'exception' => $e,
                 'context' => $context,
                 'reference' => $reference,
-            ], function ($message) use ($reference) {
-                $message->to(config('debuger.mail.to'));
+            ], function ($message) use ($reference, $to) {
+                $message->to($to);
 
                 if ($from = config('debuger.mail.from')) {
                     $message->from($from);
@@ -105,9 +116,141 @@ class DebugerExceptionHandler extends ExceptionHandler
             });
         } catch (Throwable $mailError) {
             Log::warning('Debuger failed to send exception email', [
+                'reference' => $reference,
+                'to' => config('debuger.mail.to'),
                 'error' => $mailError->getMessage(),
+                'exception' => $mailError,
             ]);
         }
+    }
+
+    /**
+     * Normalize `debuger.mail.to` into the formats supported by `$message->to()`.
+     *
+     * Supports:
+     * - a single string address
+     * - comma/semicolon separated string addresses
+     * - an array of addresses (indexed or associative address => name)
+     */
+    protected function mailTo(): array
+    {
+        $to = config('debuger.mail.to');
+
+        if ($to instanceof Collection) {
+            $to = $to->all();
+        }
+
+        if (is_string($to)) {
+            $to = trim($to);
+
+            if ($to === '') {
+                return [];
+            }
+
+            if (str_starts_with($to, '[') && str_ends_with($to, ']')) {
+                $decoded = json_decode($to, true);
+
+                if (is_array($decoded)) {
+                    $to = $decoded;
+                }
+            }
+        }
+
+        if (is_string($to)) {
+            $parts = preg_split('/[;,]+/', $to) ?: [];
+
+            return array_values(
+                array_filter(
+                    array_map('trim', $parts),
+                    static fn ($value) => $value !== ''
+                )
+            );
+        }
+
+        if (!is_array($to)) {
+            return [];
+        }
+
+        $keys = array_keys($to);
+        $isAssociative = $keys !== range(0, count($to) - 1);
+
+        if ($isAssociative) {
+            $normalized = [];
+
+            foreach ($to as $address => $name) {
+                if (!is_string($address)) {
+                    continue;
+                }
+
+                $address = trim($address);
+
+                if ($address === '') {
+                    continue;
+                }
+
+                if (is_string($name)) {
+                    $name = trim($name);
+                    $name = $name === '' ? null : $name;
+                }
+
+                $normalized[$address] = $name;
+            }
+
+            return $normalized;
+        }
+
+        $normalized = [];
+
+        foreach ($to as $item) {
+            if ($item instanceof Collection) {
+                $item = $item->all();
+            }
+
+            if (is_string($item)) {
+                $item = trim($item);
+
+                if ($item === '') {
+                    continue;
+                }
+
+                if (str_contains($item, ',') || str_contains($item, ';')) {
+                    foreach (preg_split('/[;,]+/', $item) ?: [] as $part) {
+                        $part = trim($part);
+
+                        if ($part !== '') {
+                            $normalized[] = $part;
+                        }
+                    }
+                } else {
+                    $normalized[] = $item;
+                }
+
+                continue;
+            }
+
+            if (is_array($item) && isset($item['address']) && is_string($item['address'])) {
+                $address = trim($item['address']);
+
+                if ($address === '') {
+                    continue;
+                }
+
+                $name = null;
+
+                if (isset($item['name']) && is_string($item['name'])) {
+                    $name = trim($item['name']);
+                    $name = $name === '' ? null : $name;
+                }
+
+                if ($name === null) {
+                    $normalized[] = $address;
+                } else {
+                    $normalized[$address] = $name;
+                }
+            }
+        }
+
+        return $normalized;
     }
 
     protected function requestContext(): array

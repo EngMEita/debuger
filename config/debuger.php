@@ -10,7 +10,8 @@ return [
     | the default Laravel exception handler behavior is used.
     |
     */
-    'enabled' => env('DEBUGER_ENABLED', true),
+    // Support the common "DEBUGGER_*" spelling as a fallback.
+    'enabled' => env('DEBUGER_ENABLED', env('DEBUGGER_ENABLED', true)),
 
     /*
     |--------------------------------------------------------------------------
@@ -21,7 +22,10 @@ return [
     | of exposing the actual exception details.
     |
     */
-    'user_message' => env('DEBUGER_USER_MESSAGE', 'Something went wrong. Please try again later.'),
+    'user_message' => env(
+        'DEBUGER_USER_MESSAGE',
+        env('DEBUGGER_USER_MESSAGE', 'Something went wrong. Please try again later.')
+    ),
 
     /*
     |--------------------------------------------------------------------------
@@ -33,9 +37,11 @@ return [
     |
     */
     'mail' => [
-        'to' => env('DEBUGER_MAIL_TO'),
-        'subject' => env('DEBUGER_MAIL_SUBJECT', 'Application Exception'),
-        'from' => env('DEBUGER_MAIL_FROM'),
+        'to' => env('DEBUGER_MAIL_TO', env('DEBUGGER_MAIL_TO')),
+        'subject' => env('DEBUGER_MAIL_SUBJECT', env('DEBUGGER_MAIL_SUBJECT', 'Application Exception')),
+        'from' => env('DEBUGER_MAIL_FROM', env('DEBUGGER_MAIL_FROM')),
+        // Allow emailing exceptions thrown from CLI (queue workers, scheduler, artisan, ...).
+        'send_in_console' => env('DEBUGER_MAIL_IN_CONSOLE', env('DEBUGGER_MAIL_IN_CONSOLE', true)),
     ],
 
     /*
@@ -62,5 +68,5 @@ return [
     | error page and email to help correlate user reports with log entries.
     |
     */
-    'reference_prefix' => env('DEBUGER_REFERENCE_PREFIX', 'ERR-'),
+    'reference_prefix' => env('DEBUGER_REFERENCE_PREFIX', env('DEBUGGER_REFERENCE_PREFIX', 'ERR-')),
 ];

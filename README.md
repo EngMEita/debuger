@@ -25,10 +25,13 @@ Set your desired values in `config/debuger.php` or via environment variables:
 
 - `DEBUGER_ENABLED` (default `true`) – turn the package on or off.
 - `DEBUGER_USER_MESSAGE` – text shown to users instead of the real error.
-- `DEBUGER_MAIL_TO` – recipient for exception reports (required to send emails).
+- `DEBUGER_MAIL_TO` – recipient(s) for exception reports (required to send emails). Supports a single address or a comma/semicolon separated list.
 - `DEBUGER_MAIL_SUBJECT` – subject prefix for exception emails.
 - `DEBUGER_MAIL_FROM` – optional from address for outgoing reports.
+- `DEBUGER_MAIL_IN_CONSOLE` (default `true`) – send emails for exceptions thrown from CLI (queue workers, scheduler, artisan, ...).
 - `DEBUGER_REFERENCE_PREFIX` – prefix for the generated reference id.
+
+Note: the config also supports the common `DEBUGGER_*` env var spelling as a fallback.
 
 ## Behavior
 
